@@ -85,6 +85,34 @@ if ($DisableXpCmdshell) {
     Write-Section "Skipping xp_cmdshell change (DisableXpCmdshell = false in config.ps1)"
 }
 
+# --- 4b. Make sure the firewall is actually ON before bothering to add rules ---
+# Rules do nothing if the service is stopped or the profile is disabled -
+# this was never checked anywhere before, so a rule could sit there doing
+# nothing while everyone assumes it's enforcing something.
+Write-Section "Checking Windows Firewall is actually active"
+
+$fwService = Get-Service -Name "MpsSvc" -ErrorAction SilentlyContinue
+if (-not $fwService) {
+    Write-Warning "MpsSvc (Windows Firewall service) not found - something is very wrong, rules below won't do anything."
+} elseif ($fwService.Status -ne "Running") {
+    try {
+        Start-Service -Name "MpsSvc" -ErrorAction Stop
+        Write-Host "MpsSvc was stopped - started it."
+    } catch {
+        Write-Warning "MpsSvc is stopped and could not be started: $($_.Exception.Message) - rules below won't do anything until this is fixed."
+    }
+} else {
+    Write-Host "MpsSvc running."
+}
+
+$disabledProfiles = Get-NetFirewallProfile | Where-Object { -not $_.Enabled }
+if ($disabledProfiles) {
+    Write-Warning "Disabled firewall profile(s) found: $($disabledProfiles.Name -join ', ') - enabling them."
+    Set-NetFirewallProfile -Profile $disabledProfiles.Name -Enabled True
+} else {
+    Write-Host "All firewall profiles enabled."
+}
+
 # --- 5. Restrict MSSQL port to specific known-good source IPs ---
 Write-Section "Applying host-specific firewall rules (no subnet/range rules per rule 12)"
 
