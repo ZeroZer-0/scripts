@@ -25,7 +25,7 @@ if (-not (Test-Path $BackupDir)) {
     New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
 }
 
-# --- 1. Back up current state before touching anything (rule 13) ---
+# --- 1. Back up current state before touching anything (rule 15) ---
 Write-Section "Backing up current config"
 
 $BackupFile = Join-Path $BackupDir "sp_configure_backup_$Timestamp.txt"

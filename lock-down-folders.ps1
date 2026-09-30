@@ -5,6 +5,13 @@
 # in plaintext) to Administrators + SYSTEM only, removing default
 # inherited access for everyone else.
 #
+# Uses /T so this applies retroactively to anything already inside these
+# folders, not just files created afterward - matters because
+# check-environment.ps1 (which runs before this, per run-setup.ps1's
+# order) can create a sqlcmd install in ToolsDir before this step locks
+# it down. Without /T, icacls only touches the folder itself and doesn't
+# reach pre-existing children.
+#
 # HONEST LIMIT: this protects against a lower-privilege foothold reading
 # these files. It does NOT protect against red team achieving actual
 # admin/SYSTEM-level compromise - at that point they can read anything
@@ -19,17 +26,17 @@ function Lock-Folder($path) {
     if (-not (Test-Path $path)) {
         New-Item -ItemType Directory -Path $path -Force | Out-Null
     }
-    icacls $path /inheritance:r | Out-Null
+    icacls $path /inheritance:r /T | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "icacls /inheritance:r FAILED on $path (exit code $LASTEXITCODE) - this folder is NOT locked down. Check manually."
         return
     }
-    icacls $path /grant:r "Administrators:(OI)(CI)F" "SYSTEM:(OI)(CI)F" | Out-Null
+    icacls $path /grant:r "Administrators:(OI)(CI)F" "SYSTEM:(OI)(CI)F" /T | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "icacls /grant FAILED on $path (exit code $LASTEXITCODE) - this folder is NOT locked down. Check manually."
         return
     }
-    Write-Host "Locked down: $path (Administrators + SYSTEM only)"
+    Write-Host "Locked down: $path (Administrators + SYSTEM only, applied recursively)"
 }
 
 Lock-Folder $BackupDir

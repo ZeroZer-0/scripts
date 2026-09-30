@@ -71,7 +71,7 @@ $LocalAdminUsername = "blueadmin"
 $MSSQLPort = 1433
 
 # Specific source IPs allowed to hit MSSQL (scorebot, gray team, legit admin).
-# Per competition rule 10: no firewall rules for entire subnets/ranges.
+# Per competition rule 12: no firewall rules for entire subnets/ranges.
 # Only add specific /32 hosts here, not ranges.
 $AllowedSourceIPs = @(
     "CHANGEME_scorebot_ip"
@@ -79,7 +79,7 @@ $AllowedSourceIPs = @(
 )
 
 # --- Paths ---
-# Where we back up original config before touching anything (rule 13/rule 15).
+# Where we back up original config before touching anything (rule 15).
 $BackupDir = "C:\CompBackups"
 
 # Where third-party tools (Autoruns, etc.) get staged. Downloaded once at

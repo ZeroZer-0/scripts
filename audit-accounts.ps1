@@ -1,5 +1,5 @@
 # audit-accounts.ps1
-# READ ONLY. Changes nothing (rule 11: no deleting required users,
+# READ ONLY. Changes nothing (rule 13: no deleting required users,
 # rule 3: grey team accounts are off limits).
 #
 # Compares accounts on this box against the packet account list in

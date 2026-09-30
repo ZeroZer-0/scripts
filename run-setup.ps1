@@ -1,5 +1,17 @@
 # run-setup.ps1
 # Run this once, as Administrator, right after you get console access.
+#
+# LAUNCH IT LIKE THIS (not just double-click or a plain .\run-setup.ps1):
+#   powershell.exe -ExecutionPolicy Bypass -File .\run-setup.ps1
+# The -ExecutionPolicy Bypass flag applies to this whole process, including
+# every script it calls afterward - this is what actually solves the
+# chicken-and-egg problem of files transferred via download/RustDesk being
+# blocked: check-environment.ps1 (the first step) unblocks every OTHER
+# script in the folder once it's running, but it can't unblock itself
+# before it starts, since Windows checks the block before PowerShell even
+# begins executing it. Launching with -ExecutionPolicy Bypass sidesteps
+# that entirely - no manual Unblock-File step needed at all.
+#
 # Pauses before EACH step, shows what it's about to do, and waits for
 # you to approve it - so a bad assumption in one step doesn't silently
 # take out an account or a rule you didn't expect. Slower than running
@@ -78,6 +90,9 @@ if ($configText -match "CHANGEME") {
     Write-Warning "config.ps1 still has CHANGEME placeholders. Affected steps will skip themselves and warn rather than apply garbage, but fill it in when you can."
 }
 
+Run-Step "Environment check" "check-environment.ps1" `
+    "Detects and auto-fixes safe prerequisites: elevation check, unblocks script files, installs sqlcmd if missing, starts SQL services if stopped, sets SQL Agent to Automatic. Will ASK before switching SQL auth mode (requires a disruptive service restart)."
+
 Run-Step "Lock down backup/tools/script folders" "lock-down-folders.ps1" `
     "Restricts filesystem ACLs on BackupDir, ToolsDir, and the scripts folder (which holds config.ps1's real passwords) to Administrators+SYSTEM only. Run first, before anything writes sensitive files. Does NOT protect against full admin/SYSTEM-level compromise."
 
@@ -113,4 +128,5 @@ $results | Format-Table -AutoSize
 $results | Out-File (Join-Path $BackupDir "run_setup_summary_$Timestamp.txt")
 
 Write-Host "`nFull log: $RunLog"
-Write-Host "Still to do manually: healthcheck.ps1 (needs scoring account password), find-hidden-challenges.ps1 (slow, run separately)"
+Write-Host "Still to do manually: find-hidden-challenges.ps1 (slow, run separately when you have time)."
+Write-Host "healthcheck.ps1 is available but only useful if you actually have the scoring account - if you never get it, rely on the scoreboard instead."
