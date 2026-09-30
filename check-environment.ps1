@@ -1,10 +1,12 @@
 # check-environment.ps1
-# Run FIRST, before anything else - even before lock-down-folders.ps1.
+# Runs SECOND in run-setup.ps1, right after lock-down-folders.ps1 - not
+# before it. Folders need to be locked down first so nothing this script
+# creates (like a sqlcmd install) ends up needing a retroactive ACL fix.
 #
 # NOTE: this script unblocks every OTHER .ps1 file in the folder, but it
 # cannot unblock itself before it starts (Windows checks the block before
 # PowerShell begins running it at all). Launch this - and run-setup.ps1,
-# which calls this first - with:
+# which calls this - with:
 #   powershell.exe -ExecutionPolicy Bypass -File .\run-setup.ps1
 # rather than relying on this script's own unblock logic to cover itself.
 #
@@ -94,7 +96,7 @@ if (Get-Command sqlcmd -ErrorAction SilentlyContinue) {
         Write-Host "winget unavailable or failed - falling back to direct download from GitHub (go-sqlcmd)..."
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            $releaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/vandenbergrobin/go-sqlcmd/releases/latest"
+            $releaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/microsoft/go-sqlcmd/releases/latest"
             $asset = $releaseInfo.assets | Where-Object { $_.name -match "windows-amd64\.zip$" } | Select-Object -First 1
             if ($asset) {
                 $zipPath = Join-Path $env:TEMP "sqlcmd.zip"
@@ -116,7 +118,7 @@ if (Get-Command sqlcmd -ErrorAction SilentlyContinue) {
     if ($installed) {
         Write-Fixed "sqlcmd installed automatically (added to this session's PATH - a NEW PowerShell window will also need this, or a permanent PATH entry)"
     } else {
-        Write-Problem "Could not install sqlcmd automatically. Install manually: winget install sqlcmd (or see github.com/vandenbergrobin/go-sqlcmd)"
+        Write-Problem "Could not install sqlcmd automatically. Install manually: winget install sqlcmd (or see github.com/microsoft/go-sqlcmd)"
     }
 }
 
