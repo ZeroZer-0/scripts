@@ -6,11 +6,16 @@
 # The -ExecutionPolicy Bypass flag applies to this whole process, including
 # every script it calls afterward - this is what actually solves the
 # chicken-and-egg problem of files transferred via download/RustDesk being
-# blocked: check-environment.ps1 (the first step) unblocks every OTHER
-# script in the folder once it's running, but it can't unblock itself
-# before it starts, since Windows checks the block before PowerShell even
-# begins executing it. Launching with -ExecutionPolicy Bypass sidesteps
-# that entirely - no manual Unblock-File step needed at all.
+# blocked: check-environment.ps1 (the second step, right after locking down
+# folders) unblocks every OTHER script in the folder once it's running, but
+# it can't unblock itself before it starts, since Windows checks the block
+# before PowerShell even begins executing it. Launching with
+# -ExecutionPolicy Bypass sidesteps that entirely - no manual Unblock-File
+# step needed at all.
+#
+# Order matters here: lock-down-folders.ps1 runs FIRST, before anything
+# (including this script's own log file) exists in BackupDir - see the
+# comment above that step below for why.
 #
 # Pauses before EACH step, shows what it's about to do, and waits for
 # you to approve it - so a bad assumption in one step doesn't silently
@@ -33,12 +38,55 @@ $ErrorActionPreference = "Continue"
 
 . "$PSScriptRoot\config.ps1"
 
+$results = @()
+$approveAll = $false
+
+# --- Pre-flight: PowerShell version + config check ---
+Write-Host "Pre-flight checks..." -ForegroundColor Cyan
+
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Warning "PowerShell $($PSVersionTable.PSVersion) detected. This was written for PowerShell 5.1 (Server 2019 default) - some cmdlets used here (NetSecurity, LocalAccounts modules) may not exist. Run this from a normal Windows PowerShell 5.1 prompt, not PowerShell 2.0/cmd.exe."
+    $proceed = Read-Host "Continue anyway? [y/n]"
+    if ($proceed -ne "y") { exit 1 }
+}
+
+$configText = Get-Content "$PSScriptRoot\config.ps1" -Raw
+if ($configText -match "CHANGEME") {
+    Write-Warning "config.ps1 still has CHANGEME placeholders. Affected steps will skip themselves and warn rather than apply garbage, but fill it in when you can."
+}
+
+# --- Lock down folders FIRST, outside the normal file-logging wrapper below. ---
+# This has to happen before $RunLog (or anything else in BackupDir) exists at
+# all - a log file created before the lockdown would need to be retroactively
+# re-ACL'd when lock-down-folders.ps1 runs, which is a murkier case than a
+# new file just inheriting permissions cleanly from an already-locked parent.
+# Console-only output here, nothing written to a log file yet.
+Write-Host "`n########################################" -ForegroundColor Magenta
+Write-Host "# Lock down backup/tools/script folders" -ForegroundColor Magenta
+Write-Host "########################################" -ForegroundColor Magenta
+Write-Host "Restricts filesystem ACLs on BackupDir, ToolsDir, and the scripts folder (which holds config.ps1's real passwords) to Administrators+SYSTEM only. Runs before anything else exists in those folders, including this tool's own log file. Does NOT protect against full admin/SYSTEM-level compromise." -ForegroundColor Gray
+
+$lockChoice = Read-Host "Run this step? [y/n]"
+if ($lockChoice -eq "y") {
+    $lockPath = Join-Path $PSScriptRoot "lock-down-folders.ps1"
+    if (Test-Path $lockPath) {
+        & $lockPath
+        $results += [PSCustomObject]@{ Step = "Lock down folders"; Status = "OK" }
+    } else {
+        Write-Warning "lock-down-folders.ps1 not found - skipping"
+        $results += [PSCustomObject]@{ Step = "Lock down folders"; Status = "MISSING" }
+    }
+} else {
+    Write-Host "Skipped." -ForegroundColor Yellow
+    Write-Warning "BackupDir/ToolsDir/scripts folder are NOT locked down. Files written by later steps (including this run's own log) will have whatever default permissions the folder already had."
+    $results += [PSCustomObject]@{ Step = "Lock down folders"; Status = "SKIPPED (user)" }
+}
+
+# --- NOW safe to create the log file - BackupDir is either already locked
+# down (normal case) or the user explicitly chose to skip that (their call). ---
 if (-not (Test-Path $BackupDir)) { New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null }
 $Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $RunLog = Join-Path $BackupDir "run_setup_$Timestamp.log"
-
-$results = @()
-$approveAll = $false
 
 function Run-Step($name, $scriptFile, $description) {
     Write-Host "`n########################################" -ForegroundColor Magenta
@@ -76,25 +124,8 @@ function Run-Step($name, $scriptFile, $description) {
     }
 }
 
-# --- Pre-flight: PowerShell version + config check ---
-Write-Host "Pre-flight checks..." -ForegroundColor Cyan
-
-if ($PSVersionTable.PSVersion.Major -lt 5) {
-    Write-Warning "PowerShell $($PSVersionTable.PSVersion) detected. This was written for PowerShell 5.1 (Server 2019 default) - some cmdlets used here (NetSecurity, LocalAccounts modules) may not exist. Run this from a normal Windows PowerShell 5.1 prompt, not PowerShell 2.0/cmd.exe."
-    $proceed = Read-Host "Continue anyway? [y/n]"
-    if ($proceed -ne "y") { exit 1 }
-}
-
-$configText = Get-Content "$PSScriptRoot\config.ps1" -Raw
-if ($configText -match "CHANGEME") {
-    Write-Warning "config.ps1 still has CHANGEME placeholders. Affected steps will skip themselves and warn rather than apply garbage, but fill it in when you can."
-}
-
 Run-Step "Environment check" "check-environment.ps1" `
     "Detects and auto-fixes safe prerequisites: elevation check, unblocks script files, installs sqlcmd if missing, starts SQL services if stopped, sets SQL Agent to Automatic. Will ASK before switching SQL auth mode (requires a disruptive service restart)."
-
-Run-Step "Lock down backup/tools/script folders" "lock-down-folders.ps1" `
-    "Restricts filesystem ACLs on BackupDir, ToolsDir, and the scripts folder (which holds config.ps1's real passwords) to Administrators+SYSTEM only. Run first, before anything writes sensitive files. Does NOT protect against full admin/SYSTEM-level compromise."
 
 Run-Step "Create local break-glass admin" "create-local-admin.ps1" `
     "Creates a local admin account (config.ps1: LocalAdminUsername) as a fallback if AD goes down. Will PROMPT for the password (masked, typed twice) - have it ready. Adds account to local Administrators."

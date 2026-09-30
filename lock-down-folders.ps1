@@ -1,16 +1,23 @@
 # lock-down-folders.ps1
-# Run EARLY - before harden.ps1/audit-accounts.ps1/etc. start writing
-# files into BackupDir. Restricts BackupDir, ToolsDir, and the scripts
-# folder itself (which holds config.ps1 - real sa/local-admin passwords
-# in plaintext) to Administrators + SYSTEM only, removing default
-# inherited access for everyone else.
+# Runs FIRST in run-setup.ps1 - before check-environment.ps1, before this
+# run's own log file, before anything else exists in BackupDir/ToolsDir.
+# Restricts BackupDir, ToolsDir, and the scripts folder itself (which
+# holds config.ps1 - real sa/local-admin passwords in plaintext) to
+# Administrators + SYSTEM only, removing default inherited access for
+# everyone else.
 #
-# Uses /T so this applies retroactively to anything already inside these
-# folders, not just files created afterward - matters because
-# check-environment.ps1 (which runs before this, per run-setup.ps1's
-# order) can create a sqlcmd install in ToolsDir before this step locks
-# it down. Without /T, icacls only touches the folder itself and doesn't
-# reach pre-existing children.
+# This has to run before anything is created in those folders, not after.
+# A file created BEFORE this runs would need this script to retroactively
+# re-apply folder-style inheritance flags to an already-existing file,
+# which is a murkier case than a new file just cleanly inheriting
+# permissions from an already-locked parent at creation time. run-setup.ps1
+# enforces this ordering - this step runs outside its normal per-step
+# logging wrapper specifically so its own log file doesn't become that
+# problem case itself.
+#
+# Uses /T anyway as defense in depth, in case this script is ever run a
+# second time after other files already exist (e.g. manual re-run outside
+# the normal sequence) - not something the normal flow should rely on.
 #
 # HONEST LIMIT: this protects against a lower-privilege foothold reading
 # these files. It does NOT protect against red team achieving actual
