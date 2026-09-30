@@ -33,17 +33,31 @@ function Lock-Folder($path) {
     if (-not (Test-Path $path)) {
         New-Item -ItemType Directory -Path $path -Force | Out-Null
     }
-    icacls $path /inheritance:r /T | Out-Null
+
+    # GRANT FIRST, restrict second - deliberately in this order. If something
+    # in a recursive /T walk fails partway through (one uncooperative file,
+    # a lock, whatever), icacls doesn't behave atomically - it keeps whatever
+    # it already changed on the items it successfully reached. Restricting
+    # first and granting second meant a partial failure on the restrict step
+    # could leave files with inheritance stripped and the replacement grant
+    # never applied - i.e. no usable access to anyone, not even Administrators.
+    # Granting first means even a partial failure later leaves Administrators/
+    # SYSTEM with explicit access already in place - worst case some old
+    # broader permissions also linger, which is a smaller problem than a
+    # lockout. /C tells icacls to continue past individual file errors in the
+    # recursive walk instead of the whole operation being an all-or-nothing
+    # black box.
+    icacls $path /grant:r "Administrators:(OI)(CI)F" "SYSTEM:(OI)(CI)F" /T /C | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "icacls /inheritance:r FAILED on $path (exit code $LASTEXITCODE) - this folder is NOT locked down. Check manually."
-        return
+        Write-Warning "icacls /grant reported errors on some items under $path (exit code $LASTEXITCODE). Administrators/SYSTEM have explicit access on everything it COULD reach - check manually: icacls `"$path`" /T"
     }
-    icacls $path /grant:r "Administrators:(OI)(CI)F" "SYSTEM:(OI)(CI)F" /T | Out-Null
+
+    icacls $path /inheritance:r /T /C | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "icacls /grant FAILED on $path (exit code $LASTEXITCODE) - this folder is NOT locked down. Check manually."
-        return
+        Write-Warning "icacls /inheritance:r reported errors on some items under $path (exit code $LASTEXITCODE). Some files may still carry old inherited permissions beyond Administrators/SYSTEM - not a lockout (grant already applied above), but not fully restricted either. Check manually: icacls `"$path`" /T"
     }
-    Write-Host "Locked down: $path (Administrators + SYSTEM only, applied recursively)"
+
+    Write-Host "Locked down: $path (Administrators + SYSTEM, applied recursively - see warnings above if anything couldn't be reached)"
 }
 
 Lock-Folder $BackupDir
